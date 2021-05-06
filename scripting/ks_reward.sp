@@ -1,75 +1,119 @@
-#include <sourcemod>
-#include <sdktools>
+#pragma semicolon 1
 #pragma newdecls required
 
-int i_KillCount[MAXPLAYERS+1];
-ConVar ksreward_enabled;
-ConVar ksreward_kills;
+#include <sdktools_functions>
 
-stock const char g_szReward[] = "ks_reward";
-
-char g_szAward[256];
+KeyValues
+	kvRevards;
+int
+	iMode,
+	iFrags[MAXPLAYERS+1];
 
 public Plugin myinfo = 
 {
-    name =            "Kill Streak Rewards",
-    author =          "GARAYEV",
-    description =     "Give weapons/equipments for kills",
-    version =         "1.0.0",
-    url =             "https://progaming.ba"
-};
+	name		= "Kill Streak Rewards",
+	version		= "1.1.0 (rewritten by Grey83)",
+	description	= "Give weapons/equipments for kills",
+	author		= "GARAYEV",
+	url			= "https://steamcommunity.com/groups/grey83ds"
+}
 
 public void OnPluginStart()
 {
-    ksreward_enabled = CreateConVar("ksreward_enabled", "1", "Enable = 1 | Disable = 0", _, true, 0.0, true, 1.0);
-    ksreward_kills = CreateConVar("ksreward_kills", "3", "How many kills client must get to receive reward");
-    HookConVarChange(CreateConVar(g_szReward, "weapon_healthshot", "Reward to give"), OnRewardChanged);
+	RegAdminCmd("sm_ksr_reload", Cmd_Reload, ADMFLAG_CONFIG, "Reload plugin config");
 
-    AutoExecConfig(true, "ks_reward");
-    
-    HookEvent("player_death", Hook_PlayerDeath);
+	HookEvent("player_death", Event_Player);
+	HookEvent("player_spawn", Event_Player);
 }
 
-public void OnConfigsExecuted() {
-    OnRewardChanged(FindConVar(g_szReward), NULL_STRING, NULL_STRING);
-}
-
-public void OnRewardChanged(Handle hCvar, const char[] szOld, const char[] szNew)
+public Action Cmd_Reload(int client, int args)
 {
-        GetConVarString(hCvar, g_szAward, sizeof(g_szAward));
+	ReloadCfg(client);
+	return Plugin_Handled;
+}
+
+public void OnMapStart()
+{
+	ReloadCfg();
+}
+
+stock void ReloadCfg(const int client = 0)
+{
+	iMode = iFrags[0] = 0;
+	if(kvRevards) delete kvRevards;
+	kvRevards = new KeyValues("Rewards");
+
+	char buffer[PLATFORM_MAX_PATH];
+	BuildPath(Path_SM, buffer, sizeof(buffer), "configs/ks_rewards.ini");
+	if(!kvRevards.ImportFromFile(buffer))
+		Format(buffer, sizeof(buffer), "[Kill Streak Rewards] Could not locate config '%s'", buffer);
+	else if(!kvRevards.GotoFirstSubKey())
+		Format(buffer, sizeof(buffer), "[Kill Streak Rewards] Config '%s' is empty", buffer);
+	else
+	{
+		iMode = kvRevards.GetNum("mode");
+
+		int num, frags;
+		do
+		{
+			kvRevards.GetSectionName(buffer, sizeof(buffer));
+			if((frags = StringToInt(buffer)) < 1) continue;
+
+			kvRevards.GetString(NULL_STRING, buffer, sizeof(buffer));
+			if(!buffer[0]) continue;
+
+			num++;
+			if(frags > iFrags[0]) iFrags[0] = frags;
+		}
+		while(kvRevards.GotoNextKey());
+
+		if(!iFrags[0]) FormatEx(buffer, sizeof(buffer), "[Kill Streak Rewards] Config haven't valid values");
+		else
+		{
+			ReplyToCommand(client, "[Kill Streak Rewards] Successfully loaded config. Mode: %s Max streak: %i Rewards: %i", !iMode ? "off" : iMode == 2 ? "normal" : "ffa", iFrags[0], num);
+			return;
+		}
+	}
+	delete kvRevards;
+	if(!client) LogError(buffer);
+	else ReplyToCommand(client, buffer);
 }
 
 public void OnClientPostAdminCheck(int client)
 {
-    i_KillCount[client] = 0;
+	iFrags[client] = 0;
 }
 
-public Action Hook_PlayerDeath(Event event, const char[] name, bool dontBroadcast)
+public void Event_Player(Event event, const char[] name, bool dontBroadcast)
 {
-    if(!ksreward_enabled.BoolValue) return Plugin_Continue;
-    
-    int Attacker = GetClientOfUserId(event.GetInt("attacker"));
-    int Victim = GetClientOfUserId(event.GetInt("userid"));
-    if(IsValidClient(Attacker))
-    {
-        i_KillCount[Attacker]++;
+	if(!iMode || !kvRevards)
+		return;
 
-        
-        if(i_KillCount[Attacker] == ksreward_kills.IntValue)
-        {
-            GivePlayerItem(Attacker, g_szAward)
-            i_KillCount[Attacker] = 0;
-        }
-    }
+	int victim, client;
+	if(!(victim = GetClientId(event.GetInt("userid"))))
+		return;
 
-    if(IsValidClient(Victim))
-    {
-        i_KillCount[Victim] = 0;
-    }
-    return Plugin_Continue;
+	if(!IsFakeClient(victim)) iFrags[victim] = 0;
+	if(name[7] == 's')
+		return;
+
+	if((client = GetClientId(event.GetInt("attacker"))) && !IsFakeClient(client) && IsPlayerAlive(client)
+	&& (iMode == 1 || GetClientTeam(client) != GetClientTeam(victim)))
+	{
+		static char buffer[32];
+		FormatEx(buffer, sizeof(buffer), "%i", ++iFrags[client]);
+		kvRevards.Rewind();
+		kvRevards.GetString(buffer, buffer, sizeof(buffer));
+		if(!buffer[0])
+			return;
+
+		if(GivePlayerItem(client, buffer) == -1) LogError("[Kill Streak Rewards] Unable to give '%s' to player", buffer);
+		if(iFrags[client] == iFrags[0]) iFrags[client] = 0;
+	}
 }
 
-stock bool IsValidClient(int client)
+stock int GetClientId(const int uid)
 {
-    return (1 <= client <= MaxClients && IsClientInGame(client) && !IsFakeClient(client));
-} 
+	static int id;
+	return (id = GetClientOfUserId(uid)) && IsClientInGame(id) ? id : 0;
+}

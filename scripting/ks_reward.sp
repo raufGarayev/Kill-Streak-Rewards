@@ -47,25 +47,27 @@ stock void ReloadCfg(const int client = 0)
 	BuildPath(Path_SM, buffer, sizeof(buffer), "configs/ks_rewards.ini");
 	if(!kvRevards.ImportFromFile(buffer))
 		Format(buffer, sizeof(buffer), "[Kill Streak Rewards] Could not locate config '%s'", buffer);
-	else if(!kvRevards.GotoFirstSubKey())
+	else if(!kvRevards.GotoFirstSubKey(false))
 		Format(buffer, sizeof(buffer), "[Kill Streak Rewards] Config '%s' is empty", buffer);
 	else
 	{
-		iMode = kvRevards.GetNum("mode");
+		iMode = kvRevards.GetNum(NULL_STRING);
+		ReplyToCommand(client, "Mode: %i", iMode);
 
 		int num, frags;
-		do
+		while(kvRevards.GotoNextKey(false))
 		{
 			kvRevards.GetSectionName(buffer, sizeof(buffer));
+			ReplyToCommand(client, "Section: %s", buffer);
 			if((frags = StringToInt(buffer)) < 1) continue;
 
 			kvRevards.GetString(NULL_STRING, buffer, sizeof(buffer));
+			ReplyToCommand(client, "Value: %s", buffer);
 			if(!buffer[0]) continue;
 
 			num++;
 			if(frags > iFrags[0]) iFrags[0] = frags;
 		}
-		while(kvRevards.GotoNextKey());
 
 		if(!iFrags[0]) FormatEx(buffer, sizeof(buffer), "[Kill Streak Rewards] Config haven't valid values");
 		else

@@ -7,12 +7,13 @@ KeyValues
 	kvRevards;
 int
 	iMode,
+	Debug,
 	iFrags[MAXPLAYERS+1];
 
 public Plugin myinfo = 
 {
 	name		= "Kill Streak Rewards",
-	version		= "1.1.0 (rewritten by Grey83)",
+	version		= "1.1.1 (rewritten by Grey83)",
 	description	= "Give weapons/equipments for kills",
 	author		= "GARAYEV",
 	url			= "https://steamcommunity.com/groups/grey83ds"
@@ -24,6 +25,8 @@ public void OnPluginStart()
 
 	HookEvent("player_death", Event_Player);
 	HookEvent("player_spawn", Event_Player);
+	HookEvent("round_start", Event_RoundStart, EventHookMode_PostNoCopy);
+
 }
 
 public Action Cmd_Reload(int client, int args)
@@ -39,6 +42,7 @@ public void OnMapStart()
 
 stock void ReloadCfg(const int client = 0)
 {
+	Debug = 1;
 	iMode = iFrags[0] = 0;
 	if(kvRevards) delete kvRevards;
 	kvRevards = new KeyValues("Rewards");
@@ -103,14 +107,30 @@ public void Event_Player(Event event, const char[] name, bool dontBroadcast)
 	&& (iMode == 1 || GetClientTeam(client) != GetClientTeam(victim)))
 	{
 		static char buffer[32];
+		
 		FormatEx(buffer, sizeof(buffer), "%i", ++iFrags[client]);
+		if(Debug == 1) ReplyToCommand(0, "[Kill Streak Rewards] ----------------> Player %i current frags %i - Limit F0 %i", client, iFrags[client],iFrags[0] );
+
+		if(iFrags[client] > iFrags[0]) return;
+		
 		kvRevards.Rewind();
 		kvRevards.GetString(buffer, buffer, sizeof(buffer));
 		if(!buffer[0])
 			return;
+		if(Debug == 1) ReplyToCommand(0, "[Kill Streak Rewards] ----------------> Player %i get reward %s",client, buffer);
 
 		if(GivePlayerItem(client, buffer) == -1) LogError("[Kill Streak Rewards] Unable to give '%s' to player", buffer);
-		if(iFrags[client] == iFrags[0]) iFrags[client] = 0;
+		//if(iFrags[client] == iFrags[0]) iFrags[client] = 0;
+	}
+}
+
+public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
+{
+	if(Debug == 1) ReplyToCommand(0, "[Kill Streak Rewards] ----------------> Reset Players frags");
+		
+	for(int i = 1; i <= MaxClients; i++) 
+	{
+      iFrags[i] = 0;
 	}
 }
 
